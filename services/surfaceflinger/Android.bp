@@ -94,6 +94,7 @@ cc_defaults {
         "libdisplayconfig_defaults",
         "unfieddraw_defaults",
         "libdisplayconfigaidl_defaults",
+	"surfaceflinger_qcom_ext_defaults",
     ],
     cflags: [
         "-DLOG_TAG=\"SurfaceFlinger\"",
@@ -139,7 +140,7 @@ cc_defaults {
         "libutils",
         "libSurfaceFlingerProp",
         "vendor.qti.hardware.display.composer@3.0",
-        "vendor.qti.hardware.display.config-V5-ndk",
+	"vendor.qti.hardware.display.config-V5-ndk",
         "server_configurable_flags",
     ],
     static_libs: [
@@ -161,7 +162,6 @@ cc_defaults {
         "android.hardware.graphics.composer@2.3-command-buffer",
         "android.hardware.graphics.composer@2.4-command-buffer",
         "android.hardware.graphics.composer3-command-buffer",
-        "display_intf_headers",
     ],
     export_static_lib_headers: [
         "libcompositionengine",
@@ -280,6 +280,10 @@ cc_defaults {
     defaults: [
         "surfaceflinger_defaults",
         "libsurfaceflinger_production_defaults",
+    ],
+    cppflags: [
+        "-Wno-unused-parameter",
+        "-Wno-unused-private-field",
     ],
     cflags: [
         "-DLOG_TAG=\"SurfaceFlinger\"",
