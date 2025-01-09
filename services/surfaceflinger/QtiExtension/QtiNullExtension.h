@@ -148,6 +148,10 @@ public:
                                      const DisplayDeviceState& drawingState) override;
     void qtiFbScalingOnPowerChange(sp<DisplayDevice> display) override;
 
+    void qtiDumpMini(std::string& result) override;
+    status_t qtiDoDumpContinuous(int fd, const DumpArgs& args) override;
+    void qtiDumpDrawCycle(bool prePrepare) override;
+
 private:
     SurfaceFlinger* mQtiFlinger = nullptr;
 };
