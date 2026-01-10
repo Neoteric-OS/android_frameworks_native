@@ -69,6 +69,24 @@ namespace android {
 
 using namespace std::chrono_literals;
 
+namespace {
+    bool fixRecursiveDoubleDerefs() {
+#if defined(LIBBINDER_FIX_RECURSIVE_DOUBLE_DEREFS)
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    bool freezeUseFlushEagerly() {
+#if defined(LIBBINDER_FREEZE_USE_FLUSH_EAGERLY)
+        return true;
+#else
+        return false;
+#endif
+    }
+}
+
 // Static const and functions will be optimized out if not used,
 // when LOG_NDEBUG and references in IF_LOG_COMMANDS() are optimized out.
 static const char* kReturnStrings[] = {
@@ -778,6 +796,12 @@ void IPCThreadState::processPendingDerefs()
 
 void IPCThreadState::processPostWriteDerefs()
 {
+    if (fixRecursiveDoubleDerefs()) {
+        LOG_ALWAYS_FATAL_IF(mIsProcessingPostWriteDerefs,
+                    "processPostWriteDerefs is called recursively.");
+    }
+    mIsProcessingPostWriteDerefs = true;
+
     for (size_t i = 0; i < mPostWriteWeakDerefs.size(); i++) {
         RefBase::weakref_type* refs = mPostWriteWeakDerefs[i];
         refs->decWeak(mProcess.get());
@@ -789,6 +813,8 @@ void IPCThreadState::processPostWriteDerefs()
         obj->decStrong(mProcess.get());
     }
     mPostWriteStrongDerefs.clear();
+
+    mIsProcessingPostWriteDerefs = false;
 }
 
 void IPCThreadState::joinThreadPool(bool isMain)
@@ -1028,6 +1054,14 @@ status_t IPCThreadState::addFrozenStateChangeCallback(int32_t handle, BpBinder* 
     mOut.writeInt32(BC_REQUEST_FREEZE_NOTIFICATION);
     mOut.writeInt32((int32_t)handle);
     mOut.writePointer((uintptr_t)proxy);
+
+    if (freezeUseFlushEagerly()) {
+        if (!mIsProcessingPostWriteDerefs) {
+            flushCommands();
+        }
+        return NO_ERROR;
+    }
+
     flushCommands();
     return NO_ERROR;
 }
@@ -1041,6 +1075,14 @@ status_t IPCThreadState::removeFrozenStateChangeCallback(int32_t handle, BpBinde
     mOut.writeInt32(BC_CLEAR_FREEZE_NOTIFICATION);
     mOut.writeInt32((int32_t)handle);
     mOut.writePointer((uintptr_t)proxy);
+
+    if (freezeUseFlushEagerly()) {
+        if (!mIsProcessingPostWriteDerefs) {
+            flushCommands();
+        }
+        return NO_ERROR;
+    }
+
     flushCommands();
     return NO_ERROR;
 }
@@ -1053,6 +1095,7 @@ IPCThreadState::IPCThreadState()
         mPropagateWorkSource(false),
         mIsLooper(false),
         mIsFlushing(false),
+        mIsProcessingPostWriteDerefs(false),
         mStrictModePolicy(0),
         mLastTransactionBinderFlags(0),
         mCallRestriction(mProcess->mCallRestriction) {
@@ -1599,6 +1642,7 @@ status_t IPCThreadState::executeCommand(int32_t cmd)
 
         case BR_CLEAR_FREEZE_NOTIFICATION_DONE: {
             BpBinder* proxy = (BpBinder*)mIn.readPointer();
+            proxy->getPrivateAccessor().onFrozenStateChangeListenerRemoved();
             proxy->getWeakRefs()->decWeak(proxy);
         } break;
 
