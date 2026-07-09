@@ -107,6 +107,7 @@ public:
     virtual bool hasDisplayIdleTimerCapability() const = 0;
     virtual void onLayerDestroyed(hal::HWLayerId layerId) = 0;
     virtual std::optional<ui::Size> getPhysicalSizeInMm() const = 0;
+    virtual void setPhysicalSizeInMm(std::optional<ui::Size>) = 0;
 
     static const int kLutFileDescriptorMapperSize = 20;
     using LutOffsetAndProperties = std::vector<std::pair<int32_t, composer3::LutProperties>>;
@@ -313,7 +314,7 @@ public:
     bool hasDisplayIdleTimerCapability() const override;
     void onLayerDestroyed(hal::HWLayerId layerId) override;
     hal::Error getPhysicalDisplayOrientation(Hwc2::AidlTransform* outTransform) const override;
-    void setPhysicalSizeInMm(std::optional<ui::Size> size);
+    void setPhysicalSizeInMm(std::optional<ui::Size> size) override;
     std::optional<ui::Size> getPhysicalSizeInMm() const override { return mPhysicalSize; }
 
 private:

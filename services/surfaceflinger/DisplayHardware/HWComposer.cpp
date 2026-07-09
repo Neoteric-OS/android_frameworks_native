@@ -32,6 +32,7 @@
 #include <compositionengine/OutputLayer.h>
 #include <compositionengine/impl/OutputLayerCompositionState.h>
 #include <ftl/concat.h>
+#include <ftl/optional.h>
 #include <log/log.h>
 #include <ui/DebugUtils.h>
 #include <ui/GraphicBuffer.h>
@@ -1358,6 +1359,16 @@ std::optional<display::DisplayIdentificationInfo> HWComposer::onHotplugConnect(
                 info->deviceProductInfo = std::move(newInfo->deviceProductInfo);
                 info->preferredDetailedTimingDescriptor =
                         std::move(newInfo->preferredDetailedTimingDescriptor);
+                // The physical size is normally cached on first connect. On reconnect, the EDID
+                // may have changed, invalidating the cached size which
+                // getEstimatedDotsPerInchFromSize depends on.
+                if (const auto it = mDisplayData.find(*displayId); it != mDisplayData.end()) {
+                    const std::optional<ui::Size> size =
+                            ftl::Optional(info->preferredDetailedTimingDescriptor)
+                                    .transform(
+                                            [](const auto& desc) { return desc.physicalSizeInMm; });
+                    it->second.hwcDisplay->setPhysicalSizeInMm(size);
+                }
             } else {
                 ALOGE("Failed to parse identification data for display %" PRIu64, hwcDisplayId);
             }
@@ -1420,10 +1431,9 @@ std::optional<display::DisplayIdentificationInfo> HWComposer::onHotplugConnect(
     }
 
     if (!isConnected(info->id)) {
-        std::optional<ui::Size> size = std::nullopt;
-        if (info->preferredDetailedTimingDescriptor) {
-            size = info->preferredDetailedTimingDescriptor->physicalSizeInMm;
-        }
+        const std::optional<ui::Size> size =
+                ftl::Optional(info->preferredDetailedTimingDescriptor)
+                        .transform([](const auto& desc) { return desc.physicalSizeInMm; });
         allocatePhysicalDisplay(hwcDisplayId, info->id, info->port, size);
     }
     return info;
