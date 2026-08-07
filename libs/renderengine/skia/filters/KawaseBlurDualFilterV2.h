@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <SkCanvas.h>
 #include <SkImage.h>
 #include <SkRuntimeEffect.h>
@@ -79,6 +81,9 @@ private:
     std::shared_ptr<AutoBackendTexture::LocalRef> mProtectedTextures[kMaxSurfaces];
     ui::Size mUnprotectedDisplaySize;
     ui::Size mProtectedDisplaySize;
+
+    mutable std::atomic<bool> mSurfaceF16Unsupported{false};
+    std::atomic<bool> mGraphicBufferF16Unsupported{false};
 
     void blurInto(const sk_sp<SkSurface>& drawSurface, const int destWidth,
                   const sk_sp<SkImage>& readImage, const SkIRect& srcRect,

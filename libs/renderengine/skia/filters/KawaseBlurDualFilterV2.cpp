@@ -217,8 +217,20 @@ sk_sp<SkImage> KawaseBlurDualFilterV2::generateTemporaryImage(SkiaGpuContext* co
                 std::max(1, static_cast<int>(static_cast<float>(targetBlurRect.width()) / scale));
         const int newH =
                 std::max(1, static_cast<int>(static_cast<float>(targetBlurRect.height()) / scale));
-        sk_sp<SkSurface> surface =
-                context->createRenderTarget(input->imageInfo().makeWH(newW, newH));
+        const SkImageInfo baseInfo = input->imageInfo().makeWH(newW, newH);
+
+        sk_sp<SkSurface> surface;
+        if (!mSurfaceF16Unsupported.load(std::memory_order_relaxed)) {
+            surface = context->createRenderTarget(baseInfo.makeColorType(kRGBA_F16_SkColorType));
+            if (!surface) {
+                ALOGI("KawaseBlurDualFilterV2: F16 blur surfaces not supported on this GPU, "
+                      "falling back to 8-bit");
+                mSurfaceF16Unsupported.store(true, std::memory_order_relaxed);
+            }
+        }
+        if (!surface) {
+            surface = context->createRenderTarget(baseInfo);
+        }
         LOG_THREAD_STATE_AND_CRASH_IF(!surface, "%s: Failed to create surface for blurring!",
                                       __func__);
         return surface;
@@ -229,7 +241,10 @@ sk_sp<SkImage> KawaseBlurDualFilterV2::generateTemporaryImage(SkiaGpuContext* co
                 std::max(1, static_cast<int>(static_cast<float>(targetBlurRect.width()) / scale));
         const int newH =
                 std::max(1, static_cast<int>(static_cast<float>(targetBlurRect.height()) / scale));
-        return input->imageInfo().makeWH(newW, newH);
+        const SkColorType colorType = mGraphicBufferF16Unsupported.load(std::memory_order_relaxed)
+                ? kRGBA_8888_SkColorType
+                : kRGBA_F16_SkColorType;
+        return input->imageInfo().makeColorType(colorType).makeWH(newW, newH);
     };
 
     const bool isProtected = context->supportsProtectedContent();
@@ -341,26 +356,44 @@ void KawaseBlurDualFilterV2::preallocateBuffers(SkiaGpuContext* context, ui::Siz
     // TODO(b/486256401): use transform to handle screen rotation better.
     const int32_t side = std::max(size.width, size.height);
     displaySizeRef = ui::Size(side, side);
+
     size_t totalBytes = 0;
     for (int i = 0; i < kMaxSurfaces; i++) {
         const int newW = std::max(1, static_cast<int>(static_cast<float>(side) / kScales[i]));
         const int newH = std::max(1, static_cast<int>(static_cast<float>(side) / kScales[i]));
 
-        sp<GraphicBuffer> buffer = sp<GraphicBuffer>::make(newW, newH, PIXEL_FORMAT_RGBA_8888, 1,
-                                                           usageFlags, "KawaseBlurDualFilterV2");
+        auto allocate = [&](PixelFormat format) {
+            return sp<GraphicBuffer>::make(newW, newH, format, 1, usageFlags,
+                                           "KawaseBlurDualFilterV2");
+        };
+
+        PixelFormat pixelFormat =
+                mGraphicBufferF16Unsupported ? PIXEL_FORMAT_RGBA_8888 : PIXEL_FORMAT_RGBA_FP16;
+        sp<GraphicBuffer> buffer = allocate(pixelFormat);
+        if (pixelFormat == PIXEL_FORMAT_RGBA_FP16 && buffer->initCheck() != OK) {
+            ALOGI("KawaseBlurDualFilterV2: F16 GraphicBuffers not supported on this device, "
+                  "falling back to 8-bit");
+            mGraphicBufferF16Unsupported = true;
+            pixelFormat = PIXEL_FORMAT_RGBA_8888;
+            buffer = allocate(pixelFormat);
+        }
+
         LOG_THREAD_STATE_AND_CRASH_IF(buffer->initCheck() != OK,
                                       "Failed to preallocate %s GraphicBuffer for intermediate "
-                                      "blur surface: %s. %s(i:%d, %dx%x, RGBA_8888, "
+                                      "blur surface: %s. %s(i:%d, %dx%d, %s, "
                                       "usage:0x%" PRIx64 ")",
                                       isProtected ? "protected" : "unprotected",
                                       statusToString(buffer->initCheck()).c_str(),
                                       isProtected ? "Is protected memory supported? " : "", i, newW,
-                                      newH, kUnprotectedUsageFlags);
+                                      newH,
+                                      pixelFormat == PIXEL_FORMAT_RGBA_FP16 ? "RGBA_FP16"
+                                                                            : "RGBA_8888",
+                                      usageFlags);
         std::unique_ptr<SkiaBackendTexture> backendTexture =
                 context->makeBackendTexture(buffer->toAHardwareBuffer(), true);
         texturesRef[i] = std::make_shared<AutoBackendTexture::LocalRef>(std::move(backendTexture),
                                                                         mTextureCleanupMgr);
-        totalBytes += newW * newH * bytesPerPixel(PIXEL_FORMAT_RGBA_8888);
+        totalBytes += newW * newH * bytesPerPixel(pixelFormat);
     }
     ALOGD("(Re)allocated %zu bytes of %s memory for intermediate blur surfaces (%dx%d display)",
           totalBytes, isProtected ? "protected" : "unprotected", size.width, size.height);

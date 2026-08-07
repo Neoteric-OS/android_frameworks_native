@@ -1099,7 +1099,8 @@ void SkiaRenderEngine::drawLayersInternal(
                                  layer.geometry.roundedCornersRadii);
 
         // TODO (b/270314344): Enable blurs in protected context.
-        if (mBlurFilter && layerSamplesBehind(layer, ctModifiesAlpha) && !mInProtectedContext) {
+        const bool layerIsBlurred = mBlurFilter && layerSamplesBehind(layer, ctModifiesAlpha) && !mInProtectedContext;
+        if (layerIsBlurred) {
             // rect to be blurred in the coordinate space of blurInput
             SkRect blurRect = canvas->getTotalMatrix().mapRect(bounds.rect());
 
@@ -1649,9 +1650,15 @@ void SkiaRenderEngine::drawLayersInternal(
                 canvas->restore();
             }
         } else if (!bounds.isRect()) {
+            if (layerIsBlurred) {
+                paint.setDither(true);
+            }
             paint.setAntiAlias(true);
             canvas->drawRRect(bounds, paint);
         } else {
+            if (layerIsBlurred) {
+                paint.setDither(true);
+            }
             canvas->drawRect(bounds.rect(), paint);
         }
         if (kGaneshFlushAfterEveryLayer) {
