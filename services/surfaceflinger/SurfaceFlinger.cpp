@@ -1534,8 +1534,11 @@ void SurfaceFlinger::setDesiredMode(display::DisplayModeRequest desiredMode) {
             break;
     }
 
+    // QTI_BEGIN
     mQtiSFExtnIntf->qtiSetContentFps(mode.fps.getValue());
     mQtiSFExtnIntf->qtiDolphinSetVsyncPeriod(mode.fps.getPeriodNsecs());
+    mQtiSFExtnIntf->qtiUpdateVsyncConfiguration();
+    // QTI_END
 }
 
 status_t SurfaceFlinger::setActiveModeFromBackdoor(const sp<display::DisplayToken>& displayToken,
@@ -1838,7 +1841,14 @@ void SurfaceFlinger::initiateDisplayModeChanges() {
             // setActiveConfig doesn't properly support seamless requirement.
             constraints.seamlessRequired = false;
         } else {
-            constraints.seamlessRequired = initialDesiredMode.seamless;
+            // QTI_BEGIN
+            // Restrict seamless mode switch for modes in the same config group
+            const auto activeMode = mDisplayModeController.getActiveMode(initialDisplayId);
+            const bool sameGroup =
+                    activeMode.modePtr->getGroup() == initialDesiredMode.mode.modePtr->getGroup();
+            // QTI_END
+            constraints.seamlessRequired =
+                    initialDesiredMode.seamless /* QTI_BEGIN */ && sameGroup; /* QTI_END */
         }
 
         hal::VsyncPeriodChangeTimeline outTimeline;
@@ -3409,7 +3419,11 @@ bool SurfaceFlinger::commit(PhysicalDisplayId pacesetterId,
 
     persistDisplayBrightness(mustComposite);
 
+// QTI_BEGIN: 2026-04-20: Display: sfext: Change thermal fps caching logic
     mQtiSFExtnIntf->qtiSendCompositorTid();
+
+    mQtiSFExtnIntf->qtiDisallowThermalFpsChange();
+// QTI_END: 2026-04-20: Display: sfext: Change thermal fps caching logic
 
     return mustComposite && CC_LIKELY(mBootStage != BootStage::BOOTLOADER);
 }
@@ -5105,12 +5119,6 @@ void SurfaceFlinger::processDisplayChanged(const wp<IBinder>& displayToken,
     }
 }
 
-void SurfaceFlinger::resetPhaseConfiguration(Fps refreshRate) {
-// QTI_BEGIN: 2023-01-17: Display: sf: Introduce QTI Extensions in AOSP
-    mQtiSFExtnIntf->qtiUpdateVsyncConfiguration();
-// QTI_END: 2023-01-17: Display: sf: Introduce QTI Extensions in AOSP
-}
-
 void SurfaceFlinger::processDisplayChangesLocked() {
     const auto& currentDisplays = mCurrentState.displays;
     const auto& drawingDisplays = mDrawingState.displays;
@@ -5136,6 +5144,9 @@ void SurfaceFlinger::processDisplayChangesLocked() {
     }
 
     mDrawingState.displays = mCurrentState.displays;
+    // QTI_BEGIN
+    mQtiSFExtnIntf->qtiUpdateVsyncConfiguration();
+    // QTI_END
 }
 
 void SurfaceFlinger::commitTransactionsLocked(uint32_t transactionFlags) {
