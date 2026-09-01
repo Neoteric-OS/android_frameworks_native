@@ -240,7 +240,9 @@ public:
 
     void addDeathCallback(GraphicBufferDeathCallback deathCallback, void* context);
 
+#if !defined(LIBUI_IN_VNDK) || !defined(LIBUI_LEGACY_GRAPHICBUFFER_ABI)
     DependencyMonitor& getDependencyMonitor() { return mDependencyMonitor; }
+#endif
 
 private:
     ~GraphicBuffer();
@@ -309,7 +311,14 @@ private:
     std::vector<std::pair<GraphicBufferDeathCallback, void* /*mDeathCallbackContext*/>>
             mDeathCallbacks;
 
+#if defined(LIBUI_IN_VNDK) && defined(LIBUI_LEGACY_GRAPHICBUFFER_ABI)
+    struct DependencyMonitorStub {
+        void setToken(std::string) {}
+    };
+    [[no_unique_address]] DependencyMonitorStub mDependencyMonitor;
+#else
     DependencyMonitor mDependencyMonitor;
+#endif
 };
 
 } // namespace android

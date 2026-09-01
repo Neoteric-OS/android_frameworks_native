@@ -55,6 +55,24 @@ cc_library_headers {
     export_include_dirs: ["include/ui/fuzzer/"],
 }
 
+soong_config_module_type {
+    name: "libui_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "libui",
+    bool_variables: ["legacy_graphicbuffer_abi"],
+    properties: ["cflags"],
+}
+
+// For devices whose prebuilt HALs predate Ica391dfa appending mDependencyMonitor.
+libui_cc_defaults {
+    name: "libui_abi_defaults",
+    soong_config_variables: {
+        legacy_graphicbuffer_abi: {
+            cflags: ["-DLIBUI_LEGACY_GRAPHICBUFFER_ABI"],
+        },
+    },
+}
+
 cc_defaults {
     name: "libui-defaults",
     cflags: [
@@ -174,6 +192,7 @@ cc_library_shared {
         "android.hardware.graphics.allocator-ndk_shared",
         "android.hardware.graphics.common-ndk_shared",
         "libui-defaults",
+        "libui_abi_defaults",
         // Uncomment the following line to enable VALIDATE_REGIONS traces
         //defaults: ["libui-validate-regions-defaults"],
     ],
@@ -265,6 +284,7 @@ cc_library_shared {
 
 cc_library_headers {
     name: "libui_headers",
+    defaults: ["libui_abi_defaults"],
     export_include_dirs: ["include"],
     vendor_available: true,
     target: {

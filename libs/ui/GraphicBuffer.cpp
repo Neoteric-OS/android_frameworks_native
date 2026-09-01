@@ -31,6 +31,11 @@
 
 namespace android {
 
+#if defined(LIBUI_IN_VNDK) && defined(LIBUI_LEGACY_GRAPHICBUFFER_ABI) && defined(__LP64__)
+// Some HALs hardcode this size when they allocate a GraphicBuffer themselves.
+static_assert(sizeof(GraphicBuffer) == 256);
+#endif
+
 // ===========================================================================
 // Buffer and implementation of ANativeWindowBuffer
 // ===========================================================================
