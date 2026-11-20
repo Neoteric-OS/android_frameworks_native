@@ -17,6 +17,7 @@
 
 #include <SkM44.h>
 #include <SkTileMode.h>
+#include <android-base/properties.h>
 #include <common/trace.h>
 #include <cutils/ashmem.h>
 #include <include/core/SkColorSpace.h>
@@ -204,6 +205,12 @@ static ColorSpace toColorSpace(ui::Dataspace dataspace) {
     }
 }
 
+static bool isHwc3dLutRedFastest() {
+    static const bool redFastest =
+            base::GetBoolProperty("debug.renderengine.hwc_3d_lut_red_fastest", false);
+    return redFastest;
+}
+
 LutShader::LutShader(RuntimeEffectManager& effectManager) {
     mEffect = effectManager.mKnownEffects[kLutEffect];
 }
@@ -228,10 +235,22 @@ sk_sp<SkShader> LutShader::generateLutShader(sk_sp<SkShader> input,
             return half(val);
         });
     } else {
+        // Some composers flatten their 3D luts with the red index moving fastest,
+        // i.e. `FLAT[x + WIDTH * (y + HEIGHT * z)] = ORIGINAL[x][y][z]`, while the
+        // shader follows the AIDL policy `FLAT[z + DEPTH * (y + HEIGHT * x)]`.
+        const bool reorder = lutSourceIsHwc && isHwc3dLutRedFastest() && size > 0 &&
+                length == size * size * size;
         for (int i = 0; i < length; i++) {
-            buffer[i * 4] = half(buffers[offset + i]);
-            buffer[i * 4 + 1] = half(buffers[offset + length + i]);
-            buffer[i * 4 + 2] = half(buffers[offset + length * 2 + i]);
+            int src = i;
+            if (reorder) {
+                const int z = i % size;
+                const int y = (i / size) % size;
+                const int x = i / (size * size);
+                src = x + size * (y + size * z);
+            }
+            buffer[i * 4] = half(buffers[offset + src]);
+            buffer[i * 4 + 1] = half(buffers[offset + length + src]);
+            buffer[i * 4 + 2] = half(buffers[offset + length * 2 + src]);
             buffer[i * 4 + 3] = half(0);
         }
     }
